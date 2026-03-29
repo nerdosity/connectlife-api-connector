@@ -15,6 +15,7 @@ class AcDevice
     public string $mode;
     public string $fanSpeed;
     public string $swing;
+    public int $eco;
     public array $raw;
 
     public array $modeOptions;
@@ -28,6 +29,7 @@ class AcDevice
         $this->temperatureUnit = TemperatureUnit::from($connectLifeAcDeviceStatus['statusList']['t_temp_type']);
         $this->temperature = (int)$connectLifeAcDeviceStatus['statusList']['t_temp'];
         $this->currentTemperature = (int)$connectLifeAcDeviceStatus['statusList']['f_temp_in'];
+        $this->eco = (int)($connectLifeAcDeviceStatus['statusList']['t_eco'] ?? 0);
 
         $deviceConfiguration = $this->getDeviceConfiguration($connectLifeAcDeviceStatus['deviceFeatureCode']);
 
@@ -92,6 +94,7 @@ class AcDevice
             't_power' => $this->mode === 'off' ? 0 : 1,
             't_temp_type' => $this->temperatureUnit->value,
             't_temp' => $this->temperature,
+            't_eco' => $this->eco,
             't_beep' => (int)env('BEEPING', 0)
         ];
 
