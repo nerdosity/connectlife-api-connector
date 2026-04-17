@@ -178,6 +178,9 @@ class MqttService
             if (array_key_exists('daily_energy_kwh', $statusList)) {
                 $this->client->publish("$device->id/ac/energy_daily/get", $statusList['daily_energy_kwh'], 0, true);
             }
+            if (array_key_exists('daily_runtime_minutes', $statusList)) {
+                $this->client->publish("$device->id/ac/runtime_daily/get", $statusList['daily_runtime_minutes'], 0, true);
+            }
 
             $hasFault = 0;
             foreach ($statusList as $key => $value) {

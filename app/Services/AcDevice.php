@@ -395,6 +395,21 @@ class AcDevice
             ];
         }
 
+        if (array_key_exists('daily_runtime_minutes', $statusList)) {
+            $sensors[] = [
+                'topic' => "homeassistant/sensor/{$this->id}_runtime/config",
+                'payload' => [
+                    'name' => $this->name . ' Daily Runtime',
+                    'unique_id' => "{$this->id}_runtime",
+                    'state_topic' => "$this->id/ac/runtime_daily/get",
+                    'unit_of_measurement' => 'min',
+                    'icon' => 'mdi:timer-outline',
+                    'state_class' => 'total_increasing',
+                    'device' => $device,
+                ],
+            ];
+        }
+
         return $sensors;
     }
 

@@ -208,6 +208,7 @@ class ConnectlifeApiService
                 try {
                     $energy = $this->deviceEnergy($v['puid'], $token);
                     $devices[$k]['statusList']['daily_energy_kwh'] = $energy['resultData']['electricTotal'];
+                    $devices[$k]['statusList']['daily_runtime_minutes'] = $energy['resultData']['durationTotal'];
                 } catch (\Exception $e) {
                     Log::debug('Unable to fetch device energy', [$e->getMessage()]);
                 }
