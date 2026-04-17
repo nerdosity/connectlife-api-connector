@@ -10,6 +10,9 @@ class MqttService
     /** @var array<AcDevice> */
     private array $acDevices = [];
 
+    /** @var array<string, array{value: int, time: float}> */
+    private array $pendingTemperatures = [];
+
     public function __construct(
         private MqttClient            $client,
         private ConnectlifeApiService $connectlifeApiService
@@ -154,6 +157,12 @@ class MqttService
         if (!empty($properties)) {
             $result = $this->connectlifeApiService->updateDevice($acDevice->id, $properties);
             if (($result['resultCode'] ?? 1) === 0) {
+                if ($changedProperty === 'temperature' && $acDevice->mode !== 'dry') {
+                    $this->pendingTemperatures[$acDevice->id] = [
+                        'value' => $acDevice->temperature,
+                        'time' => microtime(true),
+                    ];
+                }
                 $this->publishCurrentDeviceState($acDevice);
             }
         }
@@ -193,7 +202,20 @@ class MqttService
             Log::info("Updating HA device state", [$device->id]);
 
             $this->client->publish("$device->id/ac/mode/get", $device->mode, 0, true);
-            $this->client->publish("$device->id/ac/temperature/get", $device->temperature, 0, true);
+
+            $pending = $this->pendingTemperatures[$device->id] ?? null;
+            $tempToPublish = $device->temperature;
+            if ($pending) {
+                $elapsed = microtime(true) - $pending['time'];
+                $confirmed = abs($device->temperature - $pending['value']) <= 1;
+                $expired = $elapsed > 300;
+                if ($confirmed || $expired) {
+                    unset($this->pendingTemperatures[$device->id]);
+                } else {
+                    $tempToPublish = $pending['value'];
+                }
+            }
+            $this->client->publish("$device->id/ac/temperature/get", $tempToPublish, 0, true);
             $this->client->publish("$device->id/ac/current-temperature/get", $device->currentTemperature, 0, true);
             $this->client->publish("$device->id/ac/attributes/get", json_encode($device->raw['statusList']), 0, true);
 

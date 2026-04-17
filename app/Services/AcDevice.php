@@ -261,7 +261,7 @@ class AcDevice
             'json_attributes_topic' => "$this->id/ac/attributes/get",
             'precision' => 0.5,
             'max_temp' => $this->temperatureUnit === TemperatureUnit::celsius ? 32 : 90,
-            'min_temp' => $this->temperatureUnit === TemperatureUnit::celsius ? 16 : 61,
+            'min_temp' => $this->temperatureUnit === TemperatureUnit::celsius ? 15 : 59,
             'temp_step' => 1,
             'device' => [
                 'identifiers' => [$this->id],
