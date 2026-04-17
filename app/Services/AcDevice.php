@@ -169,7 +169,7 @@ class AcDevice
 
     public function toMinimalApiProperties(string $changedProperty): array
     {
-        return match ($changedProperty) {
+        $properties = match ($changedProperty) {
             'power' => ['t_power' => $this->mode === 'off' ? 0 : 1],
             'mode' => $this->mode === 'off'
                 ? ['t_power' => 0]
@@ -184,6 +184,12 @@ class AcDevice
             'preset' => $this->buildPresetProperties(),
             default => $this->toConnectLifeApiPropertiesArray(),
         };
+
+        if (!empty($properties)) {
+            $properties['t_beep'] = (int)env('BEEPING', 0);
+        }
+
+        return $properties;
     }
 
     private function buildFanProperties(): array
