@@ -67,6 +67,10 @@ class ConnectlifeApiService
 
     private function getAccessToken(): string
     {
+        if (Cache::has('accessToken_backoff')) {
+            throw new \Exception('Backing off from Gigya login due to previous rate limit.');
+        }
+
         return Cache::remember('accessToken', 60 * 60 * 24, function () {
             Log::info('Getting access token.');
 
@@ -88,6 +92,10 @@ class ConnectlifeApiService
             $token = $response['sessionInfo']['cookieValue'] ?? null;
 
             if (!$token) {
+                if (($response['errorCode'] ?? 0) === 403048) {
+                    Cache::put('accessToken_backoff', true, 60 * 5);
+                    Log::warning('Gigya rate limit hit, backing off for 5 minutes.');
+                }
                 throw new \Exception('Cannot login to Connectlife. Response: ' . json_encode($response));
             }
 
