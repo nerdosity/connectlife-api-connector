@@ -180,7 +180,7 @@ class AcDevice
             'fan' => $this->fanSpeedFeatureEnabled() && $this->mode !== 'dry'
                 ? $this->buildFanProperties()
                 : [],
-            'swing' => $this->buildSwingProperties(),
+            'swing' => $this->swingAllowedInCurrentMode() ? $this->buildSwingProperties() : [],
             'preset' => $this->buildPresetProperties(),
             default => $this->toConnectLifeApiPropertiesArray(),
         };
@@ -194,6 +194,11 @@ class AcDevice
             $data['t_fan_speed_s'] = $value;
         }
         return $data;
+    }
+
+    public function swingAllowedInCurrentMode(): bool
+    {
+        return !in_array($this->mode, ['dry', 'off']);
     }
 
     private function buildSwingProperties(): array
@@ -337,6 +342,7 @@ class AcDevice
                     'unique_id' => "{$this->id}_swing",
                     'command_topic' => "$this->id/ac/swing/set",
                     'state_topic' => "$this->id/ac/swing/get",
+                    'availability_topic' => "$this->id/ac/swing/available",
                     'options' => array_keys($this->swingOptions),
                     'device' => $device,
                 ],

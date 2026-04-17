@@ -130,6 +130,7 @@ class MqttService
         }
         if (isset($device->swing)) {
             $this->client->publish("$device->id/ac/swing/get", $device->swing, 0, true);
+            $this->client->publish("$device->id/ac/swing/available", $device->swingAllowedInCurrentMode() ? 'online' : 'offline', 0, true);
         }
         if (count($device->presetOptions) > 1) {
             $this->client->publish("$device->id/ac/preset/get", $device->presetMode, 0, true);
@@ -160,6 +161,7 @@ class MqttService
 
             if (isset($device->swing)) {
                 $this->client->publish("$device->id/ac/swing/get", $device->swing, 0, true);
+                $this->client->publish("$device->id/ac/swing/available", $device->swingAllowedInCurrentMode() ? 'online' : 'offline', 0, true);
             }
 
             if (count($device->presetOptions) > 1) {
