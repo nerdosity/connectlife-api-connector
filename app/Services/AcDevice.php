@@ -174,7 +174,7 @@ class AcDevice
             'mode' => $this->mode === 'off'
                 ? ['t_power' => 0]
                 : ['t_power' => 1, 't_work_mode' => (int)$this->modeOptions[$this->mode]],
-            'temperature' => in_array($this->mode, ['dry', 'fan_only'])
+            'temperature' => $this->mode === 'fan_only'
                 ? []
                 : ['t_temp' => $this->temperature, 't_temp_type' => $this->temperatureUnit->value],
             'fan' => $this->fanSpeedFeatureEnabled()
