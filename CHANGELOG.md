@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.7] - 2026-04-17
+
+### Fixed
+
+- Sync `t_fan_speed_s` (stepless fan speed) with `t_fan_speed` when sending fan commands
+
+## [2.3.6] - 2026-04-17
+
+### Fixed
+
+- Temperature commands now correctly sent in dry mode (controls dehumidification intensity)
+- Only `fan_only` mode ignores temperature setpoint
+
+## [2.3.5] - 2026-04-17
+
+### Added
+
+- MQTT sensor discovery for power (`f_electricity`, W), voltage (`f_votage`, V) and daily energy (`daily_energy_kwh`, kWh)
+- Sensors auto-detected from device statusList and linked to the same HA device as the climate entity
+
+## [2.3.4] - 2026-04-17
+
+### Fixed
+
+- Exponential backoff on Gigya API rate limit: 5 → 10 → 20 → 40 → 60 min between retries
+- Backoff counter resets on successful login
+
+## [2.3.3] - 2026-04-17
+
+### Fixed
+
+- Stop retrying Gigya login every 60s when rate-limited (errorCode 403048): wait 5 minutes before retrying
+
+## [2.3.2] - 2026-04-17
+
+### Added
+
+- Preset modes: `eco`, `sleep`, `boost`, `silent` — auto-detected from device statusList (`t_eco`, `t_sleep`, `t_super`, `t_fan_mute`)
+- Vertical swing support via `t_up_down` — auto-detected from statusList when no explicit swing config provided
+- MQTT sensor topics for preset state published with `retain=true`
+- Late device discovery: devices that come online after startup are automatically subscribed and announced to HA
+- All MQTT state publishes now use `retain=true` so new subscribers get current state immediately
+
+### Fixed
+
+- **Command status mutex (errorCode 16)**: each MQTT command now sends only the changed property instead of the full device state (e.g. mode change sends only `t_power`+`t_work_mode`)
+- Power-on from off: sends `t_power=1` alone first, waits 3s, then sends the mode/property command — avoids mutex on device initialization
+- Startup resilience: container survives API failures at boot, devices loaded on next poll
+- Retry on mutex: automatic 2s retry if first command attempt gets errorCode 16
+- Persist Laravel cache to `/data` (HA persistent storage) so Gigya access token survives addon restarts
+- Broad exception handling in MQTT loop (`\Exception` instead of `TransferException` only)
+- Sync `t_fan_speed_s` with `t_fan_speed` on fan speed changes
+
 ## [2.3.1] - 2026-03-29
 
 ### Fixed
