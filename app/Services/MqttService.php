@@ -155,6 +155,15 @@ class MqttService
             if (array_key_exists('daily_energy_kwh', $statusList)) {
                 $this->client->publish("$device->id/ac/energy_daily/get", $statusList['daily_energy_kwh'], 0, true);
             }
+
+            $hasFault = 0;
+            foreach ($statusList as $key => $value) {
+                if (str_starts_with($key, 'f_e_') && $value !== '0') {
+                    $hasFault = 1;
+                    break;
+                }
+            }
+            $this->client->publish("$device->id/ac/fault/get", $hasFault, 0, true);
         }
     }
 }

@@ -297,6 +297,38 @@ class AcDevice
         $sensors = [];
         $statusList = $this->raw['statusList'];
 
+        if (array_key_exists('f_temp_in', $statusList)) {
+            $sensors[] = [
+                'topic' => "homeassistant/sensor/{$this->id}_temp/config",
+                'payload' => [
+                    'name' => $this->name . ' Temperature',
+                    'unique_id' => "{$this->id}_temp",
+                    'state_topic' => "$this->id/ac/current-temperature/get",
+                    'unit_of_measurement' => '°C',
+                    'device_class' => 'temperature',
+                    'state_class' => 'measurement',
+                    'device' => $device,
+                ],
+            ];
+        }
+
+        $errorKeys = array_filter(array_keys($statusList), fn($k) => str_starts_with($k, 'f_e_'));
+        if (!empty($errorKeys)) {
+            $sensors[] = [
+                'topic' => "homeassistant/binary_sensor/{$this->id}_fault/config",
+                'payload' => [
+                    'name' => $this->name . ' Fault',
+                    'unique_id' => "{$this->id}_fault",
+                    'state_topic' => "$this->id/ac/fault/get",
+                    'payload_on' => '1',
+                    'payload_off' => '0',
+                    'device_class' => 'problem',
+                    'entity_category' => 'diagnostic',
+                    'device' => $device,
+                ],
+            ];
+        }
+
         if (array_key_exists('f_electricity', $statusList)) {
             $sensors[] = [
                 'topic' => "homeassistant/sensor/{$this->id}_power/config",
