@@ -27,8 +27,10 @@ class MqttLoop extends Command
         $mqttService->setupSubscribes();
         $this->info('Home Assistant subscribes created.');
 
+        $mqttService->publishLoadedDevicesState();
+
         $loopStartedAt = microtime(true);
-        $lastUpdatedState = microtime(true) - 60;
+        $lastUpdatedState = microtime(true);
 
         while (true) {
             if ($this->interrupted) {

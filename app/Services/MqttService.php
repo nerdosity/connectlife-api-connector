@@ -53,6 +53,13 @@ class MqttService
         return $this->client;
     }
 
+    public function publishLoadedDevicesState(): void
+    {
+        foreach ($this->acDevices as $device) {
+            $this->publishCurrentDeviceState($device);
+        }
+    }
+
     public function setupSubscribes(): void
     {
         foreach ($this->acDevices as $device) {
@@ -90,6 +97,10 @@ class MqttService
             'preset' => $acDevice->presetMode = $message,
             'beep' => $acDevice->beep = ($message === '1'),
         };
+
+        if ($case === 'beep') {
+            return;
+        }
 
         $this->updateAcDevice($acDevice, $case);
     }
