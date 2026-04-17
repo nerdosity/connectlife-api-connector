@@ -329,6 +329,20 @@ class AcDevice
             ];
         }
 
+        if (!empty($this->swingOptions)) {
+            $sensors[] = [
+                'topic' => "homeassistant/select/{$this->id}_swing/config",
+                'payload' => [
+                    'name' => $this->name . ' Swing',
+                    'unique_id' => "{$this->id}_swing",
+                    'command_topic' => "$this->id/ac/swing/set",
+                    'state_topic' => "$this->id/ac/swing/get",
+                    'options' => array_keys($this->swingOptions),
+                    'device' => $device,
+                ],
+            ];
+        }
+
         if (array_key_exists('f_electricity', $statusList)) {
             $sensors[] = [
                 'topic' => "homeassistant/sensor/{$this->id}_power/config",

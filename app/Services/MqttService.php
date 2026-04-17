@@ -111,7 +111,28 @@ class MqttService
         }
 
         if (!empty($properties)) {
-            $this->connectlifeApiService->updateDevice($acDevice->id, $properties);
+            $result = $this->connectlifeApiService->updateDevice($acDevice->id, $properties);
+            if (($result['resultCode'] ?? 1) === 0) {
+                $this->publishCurrentDeviceState($acDevice);
+            }
+        }
+    }
+
+    private function publishCurrentDeviceState(AcDevice $device): void
+    {
+        $this->client->publish("$device->id/ac/mode/get", $device->mode, 0, true);
+        $this->client->publish("$device->id/ac/temperature/get", $device->temperature, 0, true);
+        $this->client->publish("$device->id/ac/current-temperature/get", $device->currentTemperature, 0, true);
+        $this->client->publish("$device->id/ac/attributes/get", json_encode($device->raw['statusList']), 0, true);
+
+        if (isset($device->fanSpeed)) {
+            $this->client->publish("$device->id/ac/fan/get", $device->fanSpeed, 0, true);
+        }
+        if (isset($device->swing)) {
+            $this->client->publish("$device->id/ac/swing/get", $device->swing, 0, true);
+        }
+        if (count($device->presetOptions) > 1) {
+            $this->client->publish("$device->id/ac/preset/get", $device->presetMode, 0, true);
         }
     }
 
