@@ -276,6 +276,66 @@ class AcDevice
         return $data;
     }
 
+    public function toHomeAssistantSensorDiscoveries(): array
+    {
+        $device = [
+            'identifiers' => [$this->id],
+            'manufacturer' => 'Connectlife',
+            'model' => ($this->raw['deviceTypeCode'] ?? '') . '-' . ($this->raw['deviceFeatureCode'] ?? '')
+        ];
+
+        $sensors = [];
+        $statusList = $this->raw['statusList'];
+
+        if (array_key_exists('f_electricity', $statusList)) {
+            $sensors[] = [
+                'topic' => "homeassistant/sensor/{$this->id}_power/config",
+                'payload' => [
+                    'name' => $this->name . ' Power',
+                    'unique_id' => "{$this->id}_power",
+                    'state_topic' => "$this->id/ac/electricity/get",
+                    'unit_of_measurement' => 'W',
+                    'device_class' => 'power',
+                    'state_class' => 'measurement',
+                    'device' => $device,
+                ],
+            ];
+        }
+
+        if (array_key_exists('f_votage', $statusList)) {
+            $sensors[] = [
+                'topic' => "homeassistant/sensor/{$this->id}_voltage/config",
+                'payload' => [
+                    'name' => $this->name . ' Voltage',
+                    'unique_id' => "{$this->id}_voltage",
+                    'state_topic' => "$this->id/ac/voltage/get",
+                    'unit_of_measurement' => 'V',
+                    'device_class' => 'voltage',
+                    'state_class' => 'measurement',
+                    'entity_category' => 'diagnostic',
+                    'device' => $device,
+                ],
+            ];
+        }
+
+        if (array_key_exists('daily_energy_kwh', $statusList)) {
+            $sensors[] = [
+                'topic' => "homeassistant/sensor/{$this->id}_energy/config",
+                'payload' => [
+                    'name' => $this->name . ' Daily Energy',
+                    'unique_id' => "{$this->id}_energy",
+                    'state_topic' => "$this->id/ac/energy_daily/get",
+                    'unit_of_measurement' => 'kWh',
+                    'device_class' => 'energy',
+                    'state_class' => 'total_increasing',
+                    'device' => $device,
+                ],
+            ];
+        }
+
+        return $sensors;
+    }
+
     private function getHaModesSubset(): array
     {
         $options = array_keys($this->modeOptions);

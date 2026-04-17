@@ -42,6 +42,10 @@ class MqttService
             0,
             true
         );
+
+        foreach ($device->toHomeAssistantSensorDiscoveries() as $sensor) {
+            $this->client->publish($sensor['topic'], json_encode($sensor['payload']), 0, true);
+        }
     }
 
     public function getMqttClient(): MqttClient
@@ -139,6 +143,17 @@ class MqttService
 
             if (count($device->presetOptions) > 1) {
                 $this->client->publish("$device->id/ac/preset/get", $device->presetMode, 0, true);
+            }
+
+            $statusList = $device->raw['statusList'];
+            if (array_key_exists('f_electricity', $statusList)) {
+                $this->client->publish("$device->id/ac/electricity/get", $statusList['f_electricity'], 0, true);
+            }
+            if (array_key_exists('f_votage', $statusList)) {
+                $this->client->publish("$device->id/ac/voltage/get", $statusList['f_votage'], 0, true);
+            }
+            if (array_key_exists('daily_energy_kwh', $statusList)) {
+                $this->client->publish("$device->id/ac/energy_daily/get", $statusList['daily_energy_kwh'], 0, true);
             }
         }
     }
