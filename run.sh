@@ -80,6 +80,11 @@ if [ -z "$MQTT_HOST" ]; then
     export MQTT_SSL
 fi
 
+# Persist Laravel cache (access token) across addon restarts
+mkdir -p /data/cache
+rm -rf /home/app/storage/framework/cache
+ln -sf /data/cache /home/app/storage/framework/cache
+
 php artisan app:check-config
 
 if [ -z "$MQTT_HOST" ]; then
