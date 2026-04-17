@@ -177,7 +177,7 @@ class AcDevice
             'temperature' => $this->mode === 'fan_only'
                 ? []
                 : ['t_temp' => $this->temperature, 't_temp_type' => $this->temperatureUnit->value],
-            'fan' => $this->fanSpeedFeatureEnabled()
+            'fan' => $this->fanSpeedFeatureEnabled() && $this->mode !== 'dry'
                 ? $this->buildFanProperties()
                 : [],
             'swing' => $this->buildSwingProperties(),
