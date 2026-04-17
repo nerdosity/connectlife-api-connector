@@ -88,6 +88,17 @@ class MqttService
         $acDevice = $this->getAcDevice($topicParts[0]);
         $case = $topicParts[2];
 
+        if ($case === 'beep') {
+            $acDevice->beep = ($message === '1');
+            return;
+        }
+
+        if ($case === 'mode' && $this->isModeConflicting($acDevice->id, $message)) {
+            Log::warning("Mode '$message' for '$acDevice->name' conflicts with other running devices, reverting.");
+            $this->client->publish("$acDevice->id/ac/mode/get", $acDevice->mode, 0, true);
+            return;
+        }
+
         match ($case) {
             'power' => $message === '1' ?: $acDevice->mode = 'off',
             'mode' => $acDevice->mode = $message,
@@ -95,14 +106,32 @@ class MqttService
             'fan' => $acDevice->fanSpeed = $message,
             'swing' => $acDevice->swing = $message,
             'preset' => $acDevice->presetMode = $message,
-            'beep' => $acDevice->beep = ($message === '1'),
         };
 
-        if ($case === 'beep') {
-            return;
+        $this->updateAcDevice($acDevice, $case);
+    }
+
+    private function isModeConflicting(string $deviceId, string $newMode): bool
+    {
+        $coolingModes = ['cool', 'dry'];
+        $heatingModes = ['heat'];
+
+        $newIsCooling = in_array($newMode, $coolingModes);
+        $newIsHeating = in_array($newMode, $heatingModes);
+
+        if (!$newIsCooling && !$newIsHeating) {
+            return false;
         }
 
-        $this->updateAcDevice($acDevice, $case);
+        foreach ($this->acDevices as $id => $device) {
+            if ($id === $deviceId || $device->mode === 'off') {
+                continue;
+            }
+            if ($newIsCooling && in_array($device->mode, $heatingModes)) return true;
+            if ($newIsHeating && in_array($device->mode, $coolingModes)) return true;
+        }
+
+        return false;
     }
 
     private function getAcDevice(string $deviceId): AcDevice
