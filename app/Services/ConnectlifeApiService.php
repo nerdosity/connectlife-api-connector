@@ -39,7 +39,18 @@ class ConnectlifeApiService
                 RequestOptions::JSON => $requestData + ['sign' => $this->getSignature($requestData)]
             ])
         )['response'];
-        
+
+        if (($result['errorCode'] ?? 0) === 16) {
+            Log::warning('ConnectLife: command mutex, retrying after 2s.', $result);
+            sleep(2);
+            $requestData = $this->getCommonRequestData() + $data + ['accessToken' => $this->getAccessToken()];
+            $result = $this->decodeJsonResponse(
+                $this->httpClient->request('POST', self::BASE_URL . '/device/pu/property/set', [
+                    RequestOptions::JSON => $requestData + ['sign' => $this->getSignature($requestData)]
+                ])
+            )['response'];
+        }
+
         Log::info('ConnectLife: updating device result.', $result);
 
         return $result;

@@ -15,7 +15,8 @@ class AcDevice
     public string $mode;
     public string $fanSpeed;
     public string $swing;
-    public int $eco;
+    public string $presetMode = 'none';
+    public array $presetOptions = [];
     public array $raw;
 
     public array $modeOptions;
@@ -29,29 +30,55 @@ class AcDevice
         $this->temperatureUnit = TemperatureUnit::from($connectLifeAcDeviceStatus['statusList']['t_temp_type']);
         $this->temperature = (int)$connectLifeAcDeviceStatus['statusList']['t_temp'];
         $this->currentTemperature = (int)$connectLifeAcDeviceStatus['statusList']['f_temp_in'];
-        $this->eco = (int)($connectLifeAcDeviceStatus['statusList']['t_eco'] ?? 0);
 
-        $deviceConfiguration = $this->getDeviceConfiguration($connectLifeAcDeviceStatus['deviceFeatureCode']);
+        $statusList = $connectLifeAcDeviceStatus['statusList'];
+        $deviceConfiguration = $this->getDeviceConfiguration($connectLifeAcDeviceStatus['deviceFeatureCode'], $statusList);
 
         $this->modeOptions = $this->extractMetadata($deviceConfiguration, 't_work_mode');
         $this->fanSpeedOptions = $this->extractMetadata($deviceConfiguration, 't_fan_speed');
         $this->swingOptions = $this->extractSwingModes($deviceConfiguration);
-        $this->fanSpeed = array_search($connectLifeAcDeviceStatus['statusList']['t_fan_speed'], $this->fanSpeedOptions);
+        $this->fanSpeed = array_search($statusList['t_fan_speed'], $this->fanSpeedOptions);
 
         foreach ($this->swingOptions as $k => $v) {
-            if (
-                $v['t_swing_direction'] === ($connectLifeAcDeviceStatus['statusList']['t_swing_direction'] ?? null) &&
-                $v['t_swing_angle'] === ($connectLifeAcDeviceStatus['statusList']['t_swing_angle'] ?? null)
+            if (isset($v['t_up_down'])) {
+                if ($v['t_up_down'] === ($statusList['t_up_down'] ?? null)) {
+                    $this->swing = $k;
+                }
+            } elseif (
+                $v['t_swing_direction'] === ($statusList['t_swing_direction'] ?? null) &&
+                $v['t_swing_angle'] === ($statusList['t_swing_angle'] ?? null)
             ) {
                 $this->swing = $k;
             }
         }
 
-        $this->mode = $connectLifeAcDeviceStatus['statusList']['t_power'] === '0'
+        $this->mode = $statusList['t_power'] === '0'
             ? 'off'
-            : array_search($connectLifeAcDeviceStatus['statusList']['t_work_mode'], $this->modeOptions);
+            : array_search($statusList['t_work_mode'], $this->modeOptions);
+
+        $this->presetOptions = $this->detectPresetOptions($statusList);
+        $this->presetMode = $this->computePresetMode($statusList);
 
         $this->raw = $connectLifeAcDeviceStatus;
+    }
+
+    private function detectPresetOptions(array $statusList): array
+    {
+        $options = ['none'];
+        if (array_key_exists('t_eco', $statusList)) $options[] = 'eco';
+        if (array_key_exists('t_sleep', $statusList)) $options[] = 'sleep';
+        if (array_key_exists('t_super', $statusList)) $options[] = 'boost';
+        if (array_key_exists('t_fan_mute', $statusList)) $options[] = 'silent';
+        return $options;
+    }
+
+    private function computePresetMode(array $statusList): string
+    {
+        if (($statusList['t_eco'] ?? '0') === '1') return 'eco';
+        if (($statusList['t_sleep'] ?? '0') === '1') return 'sleep';
+        if (($statusList['t_super'] ?? '0') === '1') return 'boost';
+        if (($statusList['t_fan_mute'] ?? '0') === '1') return 'silent';
+        return 'none';
     }
 
     private function extractMetadata(
@@ -71,6 +98,15 @@ class AcDevice
 
     private function extractSwingModes(array $deviceOptions): array
     {
+        // t_up_down: single-axis vertical swing
+        if (isset($deviceOptions['t_up_down'])) {
+            $swingOptions = [];
+            foreach ($deviceOptions['t_up_down'] as $key => $value) {
+                $swingOptions[str_replace(' ', '_', strtolower($value))] = ['t_up_down' => (string)$key];
+            }
+            return $swingOptions;
+        }
+
         if (!isset($deviceOptions['t_swing_direction']) || !isset($deviceOptions['t_swing_angle'])) {
             return [];
         }
@@ -94,13 +130,30 @@ class AcDevice
             't_power' => $this->mode === 'off' ? 0 : 1,
             't_temp_type' => $this->temperatureUnit->value,
             't_temp' => $this->temperature,
-            't_eco' => $this->eco,
             't_beep' => (int)env('BEEPING', 0)
         ];
 
+        if (in_array('eco', $this->presetOptions)) {
+            $data['t_eco'] = $this->presetMode === 'eco' ? 1 : 0;
+        }
+        if (in_array('sleep', $this->presetOptions)) {
+            $data['t_sleep'] = $this->presetMode === 'sleep' ? 1 : 0;
+        }
+        if (in_array('boost', $this->presetOptions)) {
+            $data['t_super'] = $this->presetMode === 'boost' ? 1 : 0;
+        }
+        if (in_array('silent', $this->presetOptions)) {
+            $data['t_fan_mute'] = $this->presetMode === 'silent' ? 1 : 0;
+        }
+
         if ($this->swingFeatureEnabled()) {
-            $data['t_swing_direction'] = (int)$this->swingOptions[$this->swing]['t_swing_direction'];
-            $data['t_swing_angle'] = (int)$this->swingOptions[$this->swing]['t_swing_angle'];
+            $swingValue = $this->swingOptions[$this->swing];
+            if (isset($swingValue['t_up_down'])) {
+                $data['t_up_down'] = (int)$swingValue['t_up_down'];
+            } else {
+                $data['t_swing_direction'] = (int)$swingValue['t_swing_direction'];
+                $data['t_swing_angle'] = (int)$swingValue['t_swing_angle'];
+            }
         }
 
         if ($this->fanSpeedFeatureEnabled()) {
@@ -114,12 +167,12 @@ class AcDevice
         return $data;
     }
 
-    private function swingFeatureEnabled()
+    private function swingFeatureEnabled(): bool
     {
         return isset($this->swing);
     }
 
-    public function fanSpeedFeatureEnabled()
+    public function fanSpeedFeatureEnabled(): bool
     {
         return isset($this->fanSpeed);
     }
@@ -170,6 +223,14 @@ class AcDevice
             Log::info('Swing feature disabled.');
         }
 
+        if (count($this->presetOptions) > 1) {
+            $data += [
+                'preset_modes' => $this->presetOptions,
+                'preset_mode_command_topic' => "$this->id/ac/preset/set",
+                'preset_mode_state_topic' => "$this->id/ac/preset/get",
+            ];
+        }
+
         return $data;
     }
 
@@ -181,18 +242,26 @@ class AcDevice
         return $options;
     }
 
-    private function getDeviceConfiguration(string $deviceTypeCode): array
+    private function getDeviceConfiguration(string $deviceFeatureCode, array $statusList = []): array
     {
         $configuration = json_decode(env('DEVICES_CONFIG', '[]'), true);
 
-        if (isset($configuration[$deviceTypeCode])) {
-            return $configuration[$deviceTypeCode];
+        if (isset($configuration[$deviceFeatureCode])) {
+            return $configuration[$deviceFeatureCode];
         }
 
         Log::debug('Device configuration not found, using default.');
 
-        $defaultConfiguration = '{"t_work_mode":["fan only","heat","cool","dry","auto"],"t_fan_speed":{"0":"auto","5":"super low","6":"low","7":"medium","8":"high","9":"super high"}}';
+        $config = [
+            't_work_mode' => ['0' => 'fan only', '1' => 'heat', '2' => 'cool', '3' => 'dry', '4' => 'auto'],
+            't_fan_speed' => ['0' => 'auto', '5' => 'super low', '6' => 'low', '7' => 'medium', '8' => 'high', '9' => 'super high'],
+        ];
 
-        return json_decode($defaultConfiguration, true);
+        // Auto-detect t_up_down swing if the device has it but no swing config was provided
+        if (array_key_exists('t_up_down', $statusList)) {
+            $config['t_up_down'] = ['0' => 'swing', '1' => 'top', '2' => 'upper', '3' => 'middle', '4' => 'lower', '5' => 'bottom'];
+        }
+
+        return $config;
     }
 }

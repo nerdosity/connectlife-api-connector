@@ -1,4 +1,29 @@
 {
+    "100": {
+        "t_work_mode": {
+            "0": "fan only",
+            "1": "heat",
+            "2": "cool",
+            "3": "dry",
+            "4": "auto"
+        },
+        "t_fan_speed": {
+            "0": "auto",
+            "5": "super low",
+            "6": "low",
+            "7": "medium",
+            "8": "high",
+            "9": "super high"
+        },
+        "t_up_down": {
+            "0": "swing",
+            "1": "top",
+            "2": "upper",
+            "3": "middle",
+            "4": "lower",
+            "5": "bottom"
+        }
+    },
     "117": {
         "t_work_mode": {
             "0": "fan only",

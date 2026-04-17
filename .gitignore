@@ -21,3 +21,6 @@ storage/framework/sessions/**
 storage/framework/views/**
 .DS_Store
 supervisord.log
+.claude/settings.local.json
+.gitignore
+log.log

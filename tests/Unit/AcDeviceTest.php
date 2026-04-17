@@ -15,7 +15,7 @@ class AcDeviceTest extends TestCase
             File::get(base_path("/tests/hijuconn-api-data/devices-config.json"))
         );
 
-        $deviceFeatureCodes = ['117', '104', '109'];
+        $deviceFeatureCodes = ['100', '117', '104', '109'];
 
         foreach ($deviceFeatureCodes as $deviceFeatureCode) {
             $acDevice = new AcDevice(

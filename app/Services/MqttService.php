@@ -15,8 +15,12 @@ class MqttService
         private ConnectlifeApiService $connectlifeApiService
     )
     {
-        foreach ($this->connectlifeApiService->getOnlineAcDevices() as $device) {
-            $this->acDevices[$device->id] = $device;
+        try {
+            foreach ($this->connectlifeApiService->getOnlineAcDevices() as $device) {
+                $this->acDevices[$device->id] = $device;
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to load devices at startup, will retry on next poll: ' . $e->getMessage());
         }
     }
 
@@ -24,17 +28,20 @@ class MqttService
     {
         foreach ($this->acDevices as $device) {
             /** @var AcDevice $device */
-            $haData = $device->toHomeAssistantDiscoveryArray();
-
-            Log::info("Publishing discovery msg for device: $device->id", [$haData]);
-
-            $this->client->publish(
-                "homeassistant/climate/$device->id/config",
-                json_encode($haData),
-                0,
-                true
-            );
+            $this->publishHaDiscovery($device);
         }
+    }
+
+    private function publishHaDiscovery(AcDevice $device): void
+    {
+        $haData = $device->toHomeAssistantDiscoveryArray();
+        Log::info("Publishing discovery msg for device: $device->id", [$haData]);
+        $this->client->publish(
+            "homeassistant/climate/$device->id/config",
+            json_encode($haData),
+            0,
+            true
+        );
     }
 
     public function getMqttClient(): MqttClient
@@ -51,13 +58,13 @@ class MqttService
 
     public function setupDeviceSubscribes(string $id): void
     {
-        $options = ['mode', 'temperature', 'fan', 'swing', 'power'];
+        $options = ['mode', 'temperature', 'fan', 'swing', 'power', 'preset'];
 
         foreach ($options as $option) {
             $topic = "$id/ac/$option/set";
             $this->client->subscribe($topic, function (string $topic, string $message, bool $retained) {
                 Log::info("Mqtt: received a $retained on [$topic] {$message}");
-                $this->client->publish(str_replace('/set', '/get', $topic), $message);
+                $this->client->publish(str_replace('/set', '/get', $topic), $message, 0, true);
 
                 $this->reactToMessageOnTopic($topic, $message);
             });
@@ -75,7 +82,8 @@ class MqttService
             'mode' => $acDevice->mode = $message,
             'temperature' => $acDevice->temperature = (int)$message,
             'fan' => $acDevice->fanSpeed = $message,
-            'swing' => $acDevice->swing = $message
+            'swing' => $acDevice->swing = $message,
+            'preset' => $acDevice->presetMode = $message,
         };
 
         $this->updateAcDevice($acDevice);
@@ -88,27 +96,46 @@ class MqttService
 
     public function updateAcDevice(AcDevice $acDevice)
     {
-        $this->connectlifeApiService->updateDevice($acDevice->id, $acDevice->toConnectLifeApiPropertiesArray());
+        $currentPower = $acDevice->raw['statusList']['t_power'] ?? '0';
+        $properties = $acDevice->toConnectLifeApiPropertiesArray();
+
+        // Turning on from off: send power-on alone first, device needs to initialize
+        if ($currentPower === '0' && $properties['t_power'] === 1) {
+            $this->connectlifeApiService->updateDevice($acDevice->id, ['t_power' => 1]);
+            sleep(1);
+        }
+
+        $this->connectlifeApiService->updateDevice($acDevice->id, $properties);
     }
 
     public function updateDevicesState()
     {
         foreach ($this->connectlifeApiService->getOnlineAcDevices() as $device) {
-            Log::info("Updating HA device state", [$device->id]);
-
+            $isNew = !isset($this->acDevices[$device->id]);
             $this->acDevices[$device->id] = $device;
 
-            $this->client->publish("$device->id/ac/mode/get", $device->mode);
-            $this->client->publish("$device->id/ac/temperature/get", $device->temperature);
-            $this->client->publish("$device->id/ac/current-temperature/get", $device->currentTemperature);
-            $this->client->publish("$device->id/ac/attributes/get", json_encode($device->raw['statusList']));
+            if ($isNew) {
+                $this->setupDeviceSubscribes($device->id);
+                $this->publishHaDiscovery($device);
+            }
+
+            Log::info("Updating HA device state", [$device->id]);
+
+            $this->client->publish("$device->id/ac/mode/get", $device->mode, 0, true);
+            $this->client->publish("$device->id/ac/temperature/get", $device->temperature, 0, true);
+            $this->client->publish("$device->id/ac/current-temperature/get", $device->currentTemperature, 0, true);
+            $this->client->publish("$device->id/ac/attributes/get", json_encode($device->raw['statusList']), 0, true);
 
             if (isset($device->fanSpeed)) {
-                $this->client->publish("$device->id/ac/fan/get", $device->fanSpeed);
+                $this->client->publish("$device->id/ac/fan/get", $device->fanSpeed, 0, true);
             }
 
             if (isset($device->swing)) {
-                $this->client->publish("$device->id/ac/swing/get", $device->swing);
+                $this->client->publish("$device->id/ac/swing/get", $device->swing, 0, true);
+            }
+
+            if (count($device->presetOptions) > 1) {
+                $this->client->publish("$device->id/ac/preset/get", $device->presetMode, 0, true);
             }
         }
     }
