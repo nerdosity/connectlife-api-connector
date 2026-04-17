@@ -167,6 +167,48 @@ class AcDevice
         return $data;
     }
 
+    public function toMinimalApiProperties(string $changedProperty): array
+    {
+        return match ($changedProperty) {
+            'power' => ['t_power' => $this->mode === 'off' ? 0 : 1],
+            'mode' => $this->mode === 'off'
+                ? ['t_power' => 0]
+                : ['t_power' => 1, 't_work_mode' => (int)$this->modeOptions[$this->mode]],
+            'temperature' => in_array($this->mode, ['dry', 'fan_only'])
+                ? []
+                : ['t_temp' => $this->temperature, 't_temp_type' => $this->temperatureUnit->value],
+            'fan' => $this->fanSpeedFeatureEnabled()
+                ? ['t_fan_speed' => (int)($this->fanSpeedOptions[$this->fanSpeed] ?? 0)]
+                : [],
+            'swing' => $this->buildSwingProperties(),
+            'preset' => $this->buildPresetProperties(),
+            default => $this->toConnectLifeApiPropertiesArray(),
+        };
+    }
+
+    private function buildSwingProperties(): array
+    {
+        if (!$this->swingFeatureEnabled()) return [];
+        $swingValue = $this->swingOptions[$this->swing];
+        if (isset($swingValue['t_up_down'])) {
+            return ['t_up_down' => (int)$swingValue['t_up_down']];
+        }
+        return [
+            't_swing_direction' => (int)$swingValue['t_swing_direction'],
+            't_swing_angle' => (int)$swingValue['t_swing_angle'],
+        ];
+    }
+
+    private function buildPresetProperties(): array
+    {
+        $data = [];
+        if (in_array('eco', $this->presetOptions)) $data['t_eco'] = $this->presetMode === 'eco' ? 1 : 0;
+        if (in_array('sleep', $this->presetOptions)) $data['t_sleep'] = $this->presetMode === 'sleep' ? 1 : 0;
+        if (in_array('boost', $this->presetOptions)) $data['t_super'] = $this->presetMode === 'boost' ? 1 : 0;
+        if (in_array('silent', $this->presetOptions)) $data['t_fan_mute'] = $this->presetMode === 'silent' ? 1 : 0;
+        return $data;
+    }
+
     private function swingFeatureEnabled(): bool
     {
         return isset($this->swing);

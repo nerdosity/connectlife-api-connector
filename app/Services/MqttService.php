@@ -73,9 +73,9 @@ class MqttService
 
     private function reactToMessageOnTopic(string $topic, string $message): void
     {
-        $topic = explode('/', $topic);
-        $acDevice = $this->getAcDevice($topic[0]);
-        $case = $topic[2];
+        $topicParts = explode('/', $topic);
+        $acDevice = $this->getAcDevice($topicParts[0]);
+        $case = $topicParts[2];
 
         match ($case) {
             'power' => $message === '1' ?: $acDevice->mode = 'off',
@@ -86,7 +86,7 @@ class MqttService
             'preset' => $acDevice->presetMode = $message,
         };
 
-        $this->updateAcDevice($acDevice);
+        $this->updateAcDevice($acDevice, $case);
     }
 
     private function getAcDevice(string $deviceId): AcDevice
@@ -94,18 +94,21 @@ class MqttService
         return $this->acDevices[$deviceId];
     }
 
-    public function updateAcDevice(AcDevice $acDevice)
+    public function updateAcDevice(AcDevice $acDevice, string $changedProperty = 'mode')
     {
         $currentPower = $acDevice->raw['statusList']['t_power'] ?? '0';
-        $properties = $acDevice->toConnectLifeApiPropertiesArray();
+        $properties = $acDevice->toMinimalApiProperties($changedProperty);
 
-        // Turning on from off: send power-on alone first, device needs to initialize
-        if ($currentPower === '0' && $properties['t_power'] === 1) {
+        // Turning on from off: send power-on alone first, then only the mode change without t_power
+        if ($currentPower === '0' && ($properties['t_power'] ?? 0) === 1) {
             $this->connectlifeApiService->updateDevice($acDevice->id, ['t_power' => 1]);
-            sleep(1);
+            sleep(3);
+            unset($properties['t_power']);
         }
 
-        $this->connectlifeApiService->updateDevice($acDevice->id, $properties);
+        if (!empty($properties)) {
+            $this->connectlifeApiService->updateDevice($acDevice->id, $properties);
+        }
     }
 
     public function updateDevicesState()
