@@ -62,7 +62,7 @@ class MqttService
 
     public function setupDeviceSubscribes(string $id): void
     {
-        $options = ['mode', 'temperature', 'fan', 'swing', 'power', 'preset'];
+        $options = ['mode', 'temperature', 'fan', 'swing', 'power', 'preset', 'beep'];
 
         foreach ($options as $option) {
             $topic = "$id/ac/$option/set";
@@ -88,6 +88,7 @@ class MqttService
             'fan' => $acDevice->fanSpeed = $message,
             'swing' => $acDevice->swing = $message,
             'preset' => $acDevice->presetMode = $message,
+            'beep' => $acDevice->beep = ($message === '1'),
         };
 
         $this->updateAcDevice($acDevice, $case);
@@ -135,6 +136,7 @@ class MqttService
         if (count($device->presetOptions) > 1) {
             $this->client->publish("$device->id/ac/preset/get", $device->presetMode, 0, true);
         }
+        $this->client->publish("$device->id/ac/beep/get", $device->beep ? '1' : '0', 0, true);
     }
 
     public function updateDevicesState()
@@ -167,6 +169,7 @@ class MqttService
             if (count($device->presetOptions) > 1) {
                 $this->client->publish("$device->id/ac/preset/get", $device->presetMode, 0, true);
             }
+            $this->client->publish("$device->id/ac/beep/get", $device->beep ? '1' : '0', 0, true);
 
             $statusList = $device->raw['statusList'];
             if (array_key_exists('f_electricity', $statusList)) {

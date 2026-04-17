@@ -17,6 +17,7 @@ class AcDevice
     public string $swing;
     public string $presetMode = 'none';
     public array $presetOptions = [];
+    public bool $beep = false;
     public array $raw;
 
     public array $modeOptions;
@@ -58,6 +59,7 @@ class AcDevice
 
         $this->presetOptions = $this->detectPresetOptions($statusList);
         $this->presetMode = $this->computePresetMode($statusList);
+        $this->beep = (bool)(int)env('BEEPING', 0);
 
         $this->raw = $connectLifeAcDeviceStatus;
     }
@@ -186,7 +188,7 @@ class AcDevice
         };
 
         if (!empty($properties)) {
-            $properties['t_beep'] = (int)env('BEEPING', 0);
+            $properties['t_beep'] = $this->beep ? 1 : 0;
         }
 
         return $properties;
@@ -339,6 +341,21 @@ class AcDevice
                 ],
             ];
         }
+
+        $sensors[] = [
+            'topic' => "homeassistant/switch/{$this->id}_beep/config",
+            'payload' => [
+                'name' => $this->name . ' Beep',
+                'unique_id' => "{$this->id}_beep",
+                'command_topic' => "$this->id/ac/beep/set",
+                'state_topic' => "$this->id/ac/beep/get",
+                'payload_on' => '1',
+                'payload_off' => '0',
+                'icon' => 'mdi:bell-outline',
+                'entity_category' => 'config',
+                'device' => $device,
+            ],
+        ];
 
         if (!empty($this->swingOptions)) {
             $sensors[] = [
