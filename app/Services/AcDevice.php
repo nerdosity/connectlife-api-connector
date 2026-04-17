@@ -178,12 +178,22 @@ class AcDevice
                 ? []
                 : ['t_temp' => $this->temperature, 't_temp_type' => $this->temperatureUnit->value],
             'fan' => $this->fanSpeedFeatureEnabled()
-                ? ['t_fan_speed' => (int)($this->fanSpeedOptions[$this->fanSpeed] ?? 0)]
+                ? $this->buildFanProperties()
                 : [],
             'swing' => $this->buildSwingProperties(),
             'preset' => $this->buildPresetProperties(),
             default => $this->toConnectLifeApiPropertiesArray(),
         };
+    }
+
+    private function buildFanProperties(): array
+    {
+        $value = (int)($this->fanSpeedOptions[$this->fanSpeed] ?? 0);
+        $data = ['t_fan_speed' => $value];
+        if (array_key_exists('t_fan_speed_s', $this->raw['statusList'])) {
+            $data['t_fan_speed_s'] = $value;
+        }
+        return $data;
     }
 
     private function buildSwingProperties(): array
