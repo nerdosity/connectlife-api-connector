@@ -32,28 +32,33 @@ class ConnectlifeApiService
 
         Log::info('ConnectLife: updating device.', $data);
 
-        $requestData = $this->getCommonRequestData() + $data + ['accessToken' => $this->getAccessToken()];
+        $result = $this->sendPropertySet($data);
 
-        $result = $this->decodeJsonResponse(
-            $this->httpClient->request('POST', self::BASE_URL . '/device/pu/property/set', [
-                RequestOptions::JSON => $requestData + ['sign' => $this->getSignature($requestData)]
-            ])
-        )['response'];
-
-        if (($result['errorCode'] ?? 0) === 16) {
-            Log::warning('ConnectLife: command mutex, retrying after 2s.', $result);
-            sleep(2);
-            $requestData = $this->getCommonRequestData() + $data + ['accessToken' => $this->getAccessToken()];
-            $result = $this->decodeJsonResponse(
-                $this->httpClient->request('POST', self::BASE_URL . '/device/pu/property/set', [
-                    RequestOptions::JSON => $requestData + ['sign' => $this->getSignature($requestData)]
-                ])
-            )['response'];
+        // errorCode 16 = command mutex on the cloud side; bursts of commands
+        // (automations touching multiple devices) can hold it for several seconds
+        foreach ([2, 3, 4] as $delay) {
+            if (($result['errorCode'] ?? 0) !== 16) {
+                break;
+            }
+            Log::warning("ConnectLife: command mutex, retrying after {$delay}s.", $result);
+            sleep($delay);
+            $result = $this->sendPropertySet($data);
         }
 
         Log::info('ConnectLife: updating device result.', $result);
 
         return $result;
+    }
+
+    private function sendPropertySet(array $data): array
+    {
+        $requestData = $this->getCommonRequestData() + $data + ['accessToken' => $this->getAccessToken()];
+
+        return $this->decodeJsonResponse(
+            $this->httpClient->request('POST', self::BASE_URL . '/device/pu/property/set', [
+                RequestOptions::JSON => $requestData + ['sign' => $this->getSignature($requestData)]
+            ])
+        )['response'];
     }
 
     private function decodeJsonResponse(ResponseInterface $response)

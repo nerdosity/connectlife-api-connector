@@ -13,6 +13,9 @@ class MqttService
     /** @var array<string, array{value: int, time: float}> */
     private array $pendingTemperatures = [];
 
+    /** @var array<string, array{attempts: int, time: float}> */
+    private array $pendingPowerOffs = [];
+
     public function __construct(
         private MqttClient            $client,
         private ConnectlifeApiService $connectlifeApiService
@@ -156,6 +159,15 @@ class MqttService
 
         if (!empty($properties)) {
             $result = $this->connectlifeApiService->updateDevice($acDevice->id, $properties);
+
+            // Some units ignore power-off while the compressor is running even though
+            // the cloud accepts the command: track it and verify on the next poll.
+            if (($properties['t_power'] ?? null) === 0) {
+                $this->pendingPowerOffs[$acDevice->id] = ['attempts' => 0, 'time' => microtime(true)];
+            } else {
+                unset($this->pendingPowerOffs[$acDevice->id]);
+            }
+
             if (($result['resultCode'] ?? 1) === 0) {
                 if ($changedProperty === 'temperature' && $acDevice->mode !== 'dry') {
                     $this->pendingTemperatures[$acDevice->id] = [
@@ -201,7 +213,7 @@ class MqttService
 
             Log::info("Updating HA device state", [$device->id]);
 
-            $this->client->publish("$device->id/ac/mode/get", $device->mode, 0, true);
+            $this->client->publish("$device->id/ac/mode/get", $this->resolveModeToPublish($device), 0, true);
 
             $pending = $this->pendingTemperatures[$device->id] ?? null;
             $tempToPublish = $device->temperature;
@@ -256,5 +268,64 @@ class MqttService
             }
             $this->client->publish("$device->id/ac/fault/get", $hasFault, 0, true);
         }
+    }
+
+    /**
+     * While a power-off is pending verification, keep publishing 'off' to HA and
+     * re-send the command if the unit is still reporting power on.
+     */
+    private function resolveModeToPublish(AcDevice $device): string
+    {
+        $pending = $this->pendingPowerOffs[$device->id] ?? null;
+        if ($pending === null) {
+            return $device->mode;
+        }
+
+        if (($device->raw['statusList']['t_power'] ?? '0') === '0') {
+            unset($this->pendingPowerOffs[$device->id]);
+            return 'off';
+        }
+
+        $elapsed = microtime(true) - $pending['time'];
+
+        // Cloud state can lag the command briefly: don't burn a retry right away
+        if ($elapsed < 15) {
+            return 'off';
+        }
+
+        if ($pending['attempts'] >= 2 || $elapsed > 300) {
+            Log::warning("Power off failed for '$device->name' after retries, giving up and reporting real state.");
+            unset($this->pendingPowerOffs[$device->id]);
+            return $device->mode;
+        }
+
+        $this->retryPowerOff($device, $pending['attempts']);
+        $this->pendingPowerOffs[$device->id] = [
+            'attempts' => $pending['attempts'] + 1,
+            'time' => microtime(true),
+        ];
+
+        return 'off';
+    }
+
+    private function retryPowerOff(AcDevice $device, int $attempt): void
+    {
+        $beep = ['t_beep' => $device->beep ? 1 : 0];
+
+        if ($attempt === 0) {
+            Log::warning("Device '$device->name' still on after power off, retrying.");
+            $this->connectlifeApiService->updateDevice($device->id, ['t_power' => 0] + $beep);
+            return;
+        }
+
+        // Last resort: some firmwares only accept power-off once out of a compressor
+        // mode — switch to fan first (the manual workaround), then power off.
+        Log::warning("Device '$device->name' ignored power off retry, escalating via fan mode.");
+        $fanMode = $device->modeOptions['fan_only'] ?? null;
+        if ($fanMode !== null) {
+            $this->connectlifeApiService->updateDevice($device->id, ['t_work_mode' => (int)$fanMode] + $beep);
+            sleep(3);
+        }
+        $this->connectlifeApiService->updateDevice($device->id, ['t_power' => 0] + $beep);
     }
 }

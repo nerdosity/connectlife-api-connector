@@ -5,6 +5,13 @@ Tutte le modifiche significative a questo progetto sono documentate in questo fi
 Il formato si basa su [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e il progetto segue il [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.18] - 2026-09-03
+
+### Risolto
+
+- **Spegnimento ignorato dal condizionatore**: alcune unità ignorano `t_power: 0` mentre il compressore è attivo, anche se il cloud risponde `resultCode 0` — HA mostrava "off" ma lo split continuava a raffreddare. Ora ogni spegnimento viene verificato al poll successivo: se l'unità risulta ancora accesa il comando viene rispedito; al secondo tentativo si passa prima a `fan_only` (replica del workaround manuale) e poi a off. Se dopo 2 retry l'unità è ancora accesa, HA torna a mostrare lo stato reale invece di restare su "off"
+- **Retry mutex più robusto**: il mutex cloud (`errorCode 16`) viene ritentato fino a 3 volte con attese crescenti (2/3/4s) invece di una sola — le raffiche di comandi (automazioni che toccano più device) non perdono più lo spegnimento
+
 ## [2.3.17] - 2026-05-23
 
 ### Risolto
