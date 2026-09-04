@@ -5,6 +5,13 @@ Tutte le modifiche significative a questo progetto sono documentate in questo fi
 Il formato si basa su [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e il progetto segue il [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.20] - 2026-09-04
+
+### Aggiunto
+
+- **Rinnovo token via `refresh_token`**: quando l'access token scade (24 h) l'addon lo rinnova con `grant_type=refresh_token` su `/oauth/token`, senza passare da Gigya — che è l'unico punto soggetto a rate limit. Il login completo (Gigya → JWT → OAuth) resta solo come ripiego se il refresh viene rifiutato. Il refresh token è conservato 30 giorni
+- Se il cloud risponde senza `deviceList` (token non più valido) l'access token viene scartato e rinnovato al poll successivo, invece di restare in cache fino alla scadenza con i valori congelati
+
 ## [2.3.19] - 2026-09-04
 
 ### Risolto

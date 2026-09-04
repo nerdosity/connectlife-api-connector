@@ -13,6 +13,9 @@ use Carbon\Carbon;
 class ConnectlifeApiService
 {
     private const BASE_URL = 'https://clife-eu-gateway.hijuconn.com';
+    private const OAUTH_TOKEN_URL = 'https://oauth.hijuconn.com/oauth/token';
+    private const CLIENT_ID = '5065059336212';
+    private const CLIENT_SECRET = '07swfKgvJhC3ydOUS9YV_SwVz0i4LKqlOLGNUukYHVMsJRF1b-iWeUGcNlXyYCeK';
 
     public function __construct(private Client $httpClient)
     {
@@ -72,85 +75,153 @@ class ConnectlifeApiService
 
     private function getAccessToken(): string
     {
+        if ($token = Cache::get('accessToken')) {
+            return $token;
+        }
+
+        // Token scaduto: prima il refresh_token (nessuna chiamata a Gigya, quindi
+        // nessun rate limit); il login completo resta solo come ripiego.
+        if ($refresh = Cache::get('refreshToken')) {
+            try {
+                $data = $this->refreshAccessToken($refresh);
+                if (!empty($data['access_token'])) {
+                    $this->storeTokens($data);
+                    Log::info('ConnectLife: access token rinnovato via refresh_token.');
+                    return $data['access_token'];
+                }
+                Log::warning('ConnectLife: refresh_token rifiutato, faccio il login completo.', [
+                    'resultCode' => $data['resultCode'] ?? null,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('ConnectLife: refresh_token fallito, faccio il login completo: ' . $e->getMessage());
+            }
+            Cache::forget('refreshToken');
+        }
+
         if (Cache::has('accessToken_backoff')) {
             throw new \Exception('Backing off from Gigya login due to previous rate limit.');
         }
 
+        $data = $this->loginWithGigya();
+        $this->storeTokens($data);
+        Cache::forget('accessToken_backoff_attempt');
 
-        return Cache::remember('accessToken', 60 * 60 * 24, function () {
-            Log::info('Getting access token.');
+        return $data['access_token'];
+    }
 
-            $apiKey = '4_yhTWQmHFpZkQZDSV1uV-_A';
-            $gmid = 'gmid.ver4.AtLt3mZAMA.C8m5VqSTEQDrTRrkYYDgOaJWcyQ-XHow5nzQSXJF3EO3TnqTJ8tKUmQaaQ6z8p0s.zcTbHe6Ax6lHfvTN7JUj7VgO4x8Vl-vk1u0kZcrkKmKWw8K9r0shyut_at5Q0ri6zTewnAv2g1Dc8dauuyd-Sw.sc3';
-            $clientId = "5065059336212";
+    /**
+     * Rinnova l'access token con il refresh_token OAuth (senza passare da Gigya).
+     */
+    private function refreshAccessToken(string $refreshToken): array
+    {
+        Log::info('ConnectLife: refreshing access token.');
 
-            $response = $this->decodeJsonResponse(
-                $this->httpClient->request('POST', 'https://accounts.eu1.gigya.com/accounts.login', [
-                    RequestOptions::FORM_PARAMS => [
-                        'loginID' => env('CONNECTLIFE_LOGIN'),
-                        'password' => env('CONNECTLIFE_PASSWORD'),
-                        'APIKey' => $apiKey,
-                        'gmid' => $gmid,
-                    ]
-                ])
-            );
+        return $this->decodeJsonResponse(
+            $this->httpClient->request('POST', self::OAUTH_TOKEN_URL, [
+                RequestOptions::FORM_PARAMS => [
+                    'client_id' => self::CLIENT_ID,
+                    'client_secret' => self::CLIENT_SECRET,
+                    'grant_type' => 'refresh_token',
+                    'refresh_token' => $refreshToken,
+                ]
+            ])
+        ) ?? [];
+    }
 
-            $token = $response['sessionInfo']['cookieValue'] ?? null;
+    /**
+     * Salva access token e refresh token. expires_in arriva in minuti (1440 = 24h);
+     * il token viene rinnovato 5 minuti prima della scadenza.
+     */
+    private function storeTokens(array $data): void
+    {
+        $minutes = (int)($data['expires_in'] ?? 1440);
+        $ttl = max(60, min($minutes * 60, 60 * 60 * 24) - 300);
+        Cache::put('accessToken', $data['access_token'], $ttl);
 
-            if (!$token) {
-                if (($response['errorCode'] ?? 0) === 403048) {
-                    // Gigya's ban is fed by every further login attempt: retrying hourly
-                    // kept it alive for a whole day. Back off 30m, 1h, 2h, 4h, then 6h,
-                    // and keep the attempt counter alive longer than the longest wait.
-                    $attempt = Cache::get('accessToken_backoff_attempt', 0) + 1;
-                    $minutes = min(360, 30 * (2 ** ($attempt - 1)));
-                    Cache::put('accessToken_backoff', true, $minutes * 60);
-                    Cache::put('accessToken_backoff_attempt', $attempt, 60 * 60 * 24);
-                    Log::warning("Gigya rate limit hit (attempt $attempt), backing off for {$minutes} minutes.");
-                }
-                throw new \Exception('Cannot login to Connectlife. Response: ' . json_encode($response));
+        if (!empty($data['refresh_token'])) {
+            Cache::put('refreshToken', $data['refresh_token'], 60 * 60 * 24 * 30);
+        }
+    }
+
+    /**
+     * Login completo: Gigya -> JWT -> OAuth code -> token. Restituisce la risposta di /oauth/token.
+     */
+    private function loginWithGigya(): array
+    {
+        Log::info('Getting access token.');
+
+        $apiKey = '4_yhTWQmHFpZkQZDSV1uV-_A';
+        $gmid = 'gmid.ver4.AtLt3mZAMA.C8m5VqSTEQDrTRrkYYDgOaJWcyQ-XHow5nzQSXJF3EO3TnqTJ8tKUmQaaQ6z8p0s.zcTbHe6Ax6lHfvTN7JUj7VgO4x8Vl-vk1u0kZcrkKmKWw8K9r0shyut_at5Q0ri6zTewnAv2g1Dc8dauuyd-Sw.sc3';
+
+        $response = $this->decodeJsonResponse(
+            $this->httpClient->request('POST', 'https://accounts.eu1.gigya.com/accounts.login', [
+                RequestOptions::FORM_PARAMS => [
+                    'loginID' => env('CONNECTLIFE_LOGIN'),
+                    'password' => env('CONNECTLIFE_PASSWORD'),
+                    'APIKey' => $apiKey,
+                    'gmid' => $gmid,
+                ]
+            ])
+        );
+
+        $token = $response['sessionInfo']['cookieValue'] ?? null;
+
+        if (!$token) {
+            if (($response['errorCode'] ?? 0) === 403048) {
+                // Gigya's ban is fed by every further login attempt: retrying hourly
+                // kept it alive for a whole day. Back off 30m, 1h, 2h, 4h, then 6h,
+                // and keep the attempt counter alive longer than the longest wait.
+                $attempt = Cache::get('accessToken_backoff_attempt', 0) + 1;
+                $minutes = min(360, 30 * (2 ** ($attempt - 1)));
+                Cache::put('accessToken_backoff', true, $minutes * 60);
+                Cache::put('accessToken_backoff_attempt', $attempt, 60 * 60 * 24);
+                Log::warning("Gigya rate limit hit (attempt $attempt), backing off for {$minutes} minutes.");
             }
+            throw new \Exception('Cannot login to Connectlife. Response: ' . json_encode($response));
+        }
 
-            $uid = $response['UID'];
+        $uid = $response['UID'];
 
-            $response = $this->decodeJsonResponse(
-                $this->httpClient->request('POST', 'https://accounts.eu1.gigya.com/accounts.getJWT', [
-                    RequestOptions::FORM_PARAMS => [
-                        'APIKey' => $apiKey,
-                        'gmid' => $gmid,
-                        'login_token' => $token
-                    ]
-                ])
-            );
+        $response = $this->decodeJsonResponse(
+            $this->httpClient->request('POST', 'https://accounts.eu1.gigya.com/accounts.getJWT', [
+                RequestOptions::FORM_PARAMS => [
+                    'APIKey' => $apiKey,
+                    'gmid' => $gmid,
+                    'login_token' => $token
+                ]
+            ])
+        );
 
-            $response = $this->decodeJsonResponse(
-                $this->httpClient->request('POST', 'https://oauth.hijuconn.com/oauth/authorize', [
-                    RequestOptions::JSON => [
-                        'client_id' => $clientId,
-                        'idToken' => $response['id_token'],
-                        'response_type' => 'code',
-                        'redirect_uri' => 'https://api.connectlife.io/swagger/oauth2-redirect.html',
-                        'thirdType' => 'CDC',
-                        'thirdClientId' => $uid,
-                    ]
-                ])
-            );
+        $response = $this->decodeJsonResponse(
+            $this->httpClient->request('POST', 'https://oauth.hijuconn.com/oauth/authorize', [
+                RequestOptions::JSON => [
+                    'client_id' => self::CLIENT_ID,
+                    'idToken' => $response['id_token'],
+                    'response_type' => 'code',
+                    'redirect_uri' => 'https://api.connectlife.io/swagger/oauth2-redirect.html',
+                    'thirdType' => 'CDC',
+                    'thirdClientId' => $uid,
+                ]
+            ])
+        );
 
-            $response = $this->decodeJsonResponse(
-                $this->httpClient->request('POST', 'https://oauth.hijuconn.com/oauth/token', [
-                    RequestOptions::FORM_PARAMS => [
-                        'client_id' => $clientId,
-                        'code' => $response['code'],
-                        'grant_type' => 'authorization_code',
-                        'client_secret' => '07swfKgvJhC3ydOUS9YV_SwVz0i4LKqlOLGNUukYHVMsJRF1b-iWeUGcNlXyYCeK',
-                        'redirect_uri' => 'https://api.connectlife.io/swagger/oauth2-redirect.html',
-                    ]
-                ])
-            );
+        $response = $this->decodeJsonResponse(
+            $this->httpClient->request('POST', self::OAUTH_TOKEN_URL, [
+                RequestOptions::FORM_PARAMS => [
+                    'client_id' => self::CLIENT_ID,
+                    'code' => $response['code'],
+                    'grant_type' => 'authorization_code',
+                    'client_secret' => self::CLIENT_SECRET,
+                    'redirect_uri' => 'https://api.connectlife.io/swagger/oauth2-redirect.html',
+                ]
+            ])
+        );
 
-            Cache::forget('accessToken_backoff_attempt');
-            return $response['access_token'];
-        });
+        if (empty($response['access_token'])) {
+            throw new \Exception('Cannot obtain Connectlife OAuth token. Response: ' . json_encode($response));
+        }
+
+        return $response;
     }
 
     /**
@@ -207,6 +278,9 @@ class ConnectlifeApiService
 
             if (!isset($response['deviceList'])) {
                 Log::warning('ConnectLife API error: missing deviceList', $response);
+                // Token probabilmente non piu' valido: al prossimo poll si passa dal
+                // refresh_token (o dal login completo se anche quello fallisce).
+                Cache::forget('accessToken');
                 return [];
             }
 
