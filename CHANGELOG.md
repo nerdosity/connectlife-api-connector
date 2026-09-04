@@ -5,6 +5,12 @@ Tutte le modifiche significative a questo progetto sono documentate in questo fi
 Il formato si basa su [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e il progetto segue il [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.19] - 2026-09-04
+
+### Risolto
+
+- **Ban Gigya auto-alimentato**: dopo un `Api Rate limit exceeded` (errorCode 403048) l'addon ritentava il login ogni 60 minuti, e ogni tentativo rinnovava il ban — è rimasto senza token per più di 24 ore con tutti i valori MQTT congelati. Il backoff ora è 30 min → 1 h → 2 h → 4 h → 6 h e il contatore dei tentativi sopravvive 24 h (prima scadeva dopo 2 h e riazzerava la progressione)
+
 ## [2.3.18] - 2026-09-03
 
 ### Risolto

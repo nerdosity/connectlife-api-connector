@@ -99,10 +99,13 @@ class ConnectlifeApiService
 
             if (!$token) {
                 if (($response['errorCode'] ?? 0) === 403048) {
+                    // Gigya's ban is fed by every further login attempt: retrying hourly
+                    // kept it alive for a whole day. Back off 30m, 1h, 2h, 4h, then 6h,
+                    // and keep the attempt counter alive longer than the longest wait.
                     $attempt = Cache::get('accessToken_backoff_attempt', 0) + 1;
-                    $minutes = min(60, 5 * (2 ** ($attempt - 1)));
+                    $minutes = min(360, 30 * (2 ** ($attempt - 1)));
                     Cache::put('accessToken_backoff', true, $minutes * 60);
-                    Cache::put('accessToken_backoff_attempt', $attempt, 60 * 60 * 2);
+                    Cache::put('accessToken_backoff_attempt', $attempt, 60 * 60 * 24);
                     Log::warning("Gigya rate limit hit (attempt $attempt), backing off for {$minutes} minutes.");
                 }
                 throw new \Exception('Cannot login to Connectlife. Response: ' . json_encode($response));
